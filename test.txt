@@ -1,0 +1,1 @@
+every 4m every 1m ( ping "stand", ping "sit" )

@@ -32,6 +32,7 @@ data Action = Every Interval Action
             | After Interval Action 
             | Ping Message
             | Sequence [ Action ] 
+            | Define String [ String ] 
             deriving Show 
 
 -- generic parsing
@@ -53,6 +54,8 @@ pList start end del element =
                 ( (:) 
                   <$> ( spaces *> element <* spaces ) 
                   <*> many ( char del *> spaces *> element <* spaces ) ) 
+
+
 
 -- ocicka parsing
 
@@ -117,7 +120,17 @@ pAction = pEvery <|> pAfter <|> pPing <|> pSequence
 pSequence :: Parser Action
 pSequence = Sequence <$> pList '(' ')' ',' pAction
 
-pFile = pAction
+pMessageBlock :: Parser Action
+pMessageBlock = do 
+    string "--"
+    manspaces
+    name <- many1 letter    
+    char '\n' 
+    lines <- many ( (:) <$> noneOf "-" <*> many ( noneOf "\n" ) <* char '\n' )
+    string "--"
+    return $ Define name lines
+
+pFile = spaces *> many ( ( pAction <|> pMessageBlock ) <* spaces ) <* eof 
 
 -- collecting jobs
 
@@ -130,7 +143,7 @@ instance Show Job where
     show ( Job id repeat _ ) = "Job " ++ show id ++ " " ++ show repeat
 
 data JobBox = JobBox Integer Job deriving ( Show, Eq )
-type JobCollector a = RWS ( Integer, Integer ) [ JobBox ] Integer a -- r - ( delay in seconds, repeat in seconds )
+type JobCollector a = RWS ( Integer, Integer ) [ JobBox ] ( Integer, Map String [ String ] ) a -- r - ( delay in seconds, repeat in seconds )
 
 instance Ord JobBox where
     JobBox a _ <= JobBox b _ = a <= b
@@ -143,9 +156,9 @@ microsecondsOfInterval ( Days d ) = 1000000 * 24 * 60 * 60 * d
 addJob :: IO () -> JobCollector () 
 addJob work = do 
     ( delay, repeat ) <- ask
-    id <- R.get
+    ( id, _ ) <- R.get
     tell [ JobBox delay ( Job id repeat work ) ]
-    R.modify (+1)
+    R.modify $ first (+1)
 
 notifySendCommand :: ( Show a ) => a -> Maybe Integer -> String
 notifySendCommand message limit = 
@@ -169,21 +182,23 @@ randomElement xs = do
 ping :: Message -> Map String [ String ] -> IO ()
 ping ( Message msg ) map = print msg 
 ping ( OneOf ( List l ) ) map = randomElement l >>= print
-ping ( OneOf ( Var v ) ) map = print $ M.lookup v map 
+ping ( OneOf ( Var v ) ) map = randomElement ( fromJust $ M.lookup v map ) >>= print
 
 collect :: Action -> JobCollector ()
-collect ( Ping message ) = addJob ( ping message M.empty )
-
+collect ( Ping message ) = do 
+    map <- snd <$> R.get 
+    addJob ( ping message map )
 collect ( Every interval action ) = do 
     local ( \ ( delay, repeat ) -> ( delay, microsecondsOfInterval interval ) ) ( collect action )
 collect ( After interval action ) = do 
     local ( \ ( delay, repeat ) -> ( delay + microsecondsOfInterval interval, repeat ) ) ( collect action )
 collect ( Sequence actions ) = mapM_ collect actions
+collect ( Define name messages ) = R.modify $ second ( M.insert name messages )
 
 processAction ( Left error ) = do
     print error
     return []
-processAction ( Right action ) = return $ snd $ execRWS ( collect action ) ( 0, -1 ) 0
+processAction ( Right actions ) = return $ snd $ execRWS ( R.mapM collect actions ) ( 0, -1 ) ( 0, M.empty )
 
 type Time = Integer
 type Scheduler a = StateT ( Time, Heap JobBox ) IO a
@@ -207,18 +222,22 @@ schedule = do
                currentTime <- lift getUTCMicros
                lift . optionalDelay . fromIntegral $ 
                    delay - ( currentTime - startTime )
-               currenterTime <- flip (-) startTime <$> lift getUTCMicros
+               currenterTime <- lift getUTCMicros
+               lift $ print $ ( currenterTime - startTime ) `div` 1000000
                lift work
                S.modify $ second  
-                   ( if repeat > 0 then H.insert ( JobBox ( currentTime + delay - startTime + repeat )job ) . H.deleteMin
+                   ( if repeat > 0 then H.insert ( JobBox ( currenterTime - startTime + repeat ) job ) . H.deleteMin
                                    else H.deleteMin ) 
                schedule
 
-main :: IO ()
-main = do 
+mainRun :: IO ()
+mainRun = do 
     args <- getArgs
     actions <- R.mapM ( parseFromFile pFile ) args
     jobs <- concat <$> R.mapM processAction actions
     currentTime <- getUTCMicros
     runStateT schedule ( currentTime, H.fromList jobs )
     return ()
+
+main :: IO ()
+main = mainRun

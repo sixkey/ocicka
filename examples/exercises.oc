@@ -15,7 +15,8 @@ after 30m every 1h (
     after 40m ping oneof EasyExercises
 )
 
-after 1h every 1h (
+after 1h ping "first hour"
+after 2h every 1h (
     ping "another hour"
 )
 

@@ -1,20 +1,14 @@
--- EasyExercises
-Look into the distance
-Roll your eyes from side to side
+-- SomeRandomMessages
+I am message number 1
+I am message number 2
+I am message number 3
+I am message number 4
 --
 
--- MediumExercises
-Walk around the room
-Do some stretching
---
-
-after 30m every 1h (
-    ping oneof EasyExercises, 
-    after 20m ping oneof MediumExercises,
-    after 40m ping oneof EasyExercises
+after 5s every 4s (
+    ping "start",
+    after 1s ping oneof SomeRandomMessages, 
+    after 2s ping "end"
 )
 
-after 40m every 1h (
-    ping "stand", 
-    after 20m ping "sit"
-)
+every 1s ping "tick"

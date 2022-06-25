@@ -1,0 +1,20 @@
+-- EasyExercises
+Look into the distance
+Roll your eyes from side to side
+--
+
+-- MediumExercises
+Walk around the room
+Do some stretching
+--
+
+after 30m every 1h (
+    ping oneof EasyExercises, 
+    after 20m ping oneof MediumExercises,
+    after 40m ping oneof EasyExercises
+)
+
+after 40m every 1h (
+    ping "stand", 
+    after 20m ping "sit"
+)

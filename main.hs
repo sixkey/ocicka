@@ -168,8 +168,8 @@ notifySendCommand message limit =
              Nothing -> "" )
     ++ "'" ++ show message ++ "'"
 
-notifySend :: ( Show a ) => Maybe Integer -> a -> IO ()
-notifySend limit message = do 
+notifySend :: ( Show a ) => a -> Maybe Integer -> IO ()
+notifySend message limit = do 
     spawnCommand $ notifySendCommand message limit
     return ()
 
@@ -180,12 +180,9 @@ randomElement xs = do
         return ( xs !! i )
 
 ping :: Message -> Map String [ String ] -> IO ()
-ping msg map = 
-    ( case msg of 
-        Message msg -> return msg 
-        OneOf ( List l ) -> randomElement l 
-        OneOf ( Var v ) -> randomElement ( fromJust $ M.lookup v map ) ) 
-        >>= notifySend ( Just 10 )
+ping ( Message msg ) map = print msg 
+ping ( OneOf ( List l ) ) map = randomElement l >>= print
+ping ( OneOf ( Var v ) ) map = randomElement ( fromJust $ M.lookup v map ) >>= print
 
 collect :: Action -> JobCollector ()
 collect ( Ping message ) = do 

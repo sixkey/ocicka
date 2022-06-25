@@ -24,4 +24,4 @@
 
 # Example
 
-Example can be found in `example.oc`. To run ocicka simply run `rungch src/main.hs examples/example.oc`.
+Example can be found in `example.oc`. To run ocicka simply run `runghc src/main.hs examples/example.oc`.

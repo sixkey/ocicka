@@ -191,17 +191,19 @@ collect :: Action -> JobCollector ()
 collect ( Ping message ) = do 
     map <- snd <$> R.get 
     addJob ( ping message map )
-collect ( Every interval action ) = do 
-    local ( \ ( delay, repeat ) -> ( delay, microsecondsOfInterval interval ) ) ( collect action )
-collect ( After interval action ) = do 
-    local ( \ ( delay, repeat ) -> ( delay + microsecondsOfInterval interval, repeat ) ) ( collect action )
+collect ( Every interval action ) = 
+    local ( second . const $ microsecondsOfInterval interval ) 
+          ( collect action )
+collect ( After interval action ) = 
+    local ( first ( + microsecondsOfInterval interval ) ) 
+          ( collect action )
 collect ( Sequence actions ) = mapM_ collect actions
 collect ( Define name messages ) = R.modify $ second ( M.insert name messages )
 
-processAction ( Left error ) = do
-    print error
-    return []
-processAction ( Right actions ) = return $ snd $ execRWS ( R.mapM collect actions ) ( 0, -1 ) ( 0, M.empty )
+processAction ( Left error ) = print error >> return []
+processAction ( Right actions ) = return . snd $ execRWS ( R.mapM collect actions ) 
+                                                         ( 0, -1 ) 
+                                                         ( 0, M.empty )
 
 type Time = Integer
 type Scheduler a = StateT ( Time, Heap JobBox ) IO a
@@ -211,14 +213,13 @@ getUTCMicros = flip div 1000000 . diffTimeToPicoseconds . utctDayTime <$> getCur
 
 optionalDelay :: Int -> IO ()
 optionalDelay 0 = return ()
-optionalDelay n = do 
-    --print n 
-    threadDelay n
+optionalDelay n = threadDelay n
 
 schedule :: Scheduler ()
 schedule = do 
     ( startTime, jobs ) <- S.get
-    if H.null jobs then return () 
+    if H.null jobs 
+       then return () 
        else do
         let minJob@( JobBox delay job@( Job _ repeat work ) ) = H.minimum jobs in
             do -- lift ( print minJob )
@@ -228,18 +229,16 @@ schedule = do
                currenterTime <- lift getUTCMicros
                lift work
                S.modify $ second  
-                   ( if repeat > 0 then H.insert ( JobBox ( currenterTime - startTime + repeat ) job ) . H.deleteMin
-                                   else H.deleteMin ) 
+                   ( if repeat > 0 
+                        then H.insert ( JobBox ( currenterTime - startTime + repeat ) job ) . H.deleteMin
+                        else H.deleteMin ) 
                schedule
 
-mainRun :: IO ()
-mainRun = do 
+main :: IO ()
+main = do
     args <- getArgs
     actions <- R.mapM ( parseFromFile pFile ) args
     jobs <- concat <$> R.mapM processAction actions
     currentTime <- getUTCMicros
     runStateT schedule ( currentTime, H.fromList jobs )
     return ()
-
-main :: IO ()
-main = mainRun

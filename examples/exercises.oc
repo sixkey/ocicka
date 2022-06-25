@@ -1,10 +1,11 @@
 -- EasyExercises
-Look into the distance
-Roll your eyes from side to side
+Look into the distance for 15s
+Roll your eyes from side to side for 15s
+Scretch in chair
 --
 
 -- MediumExercises
-Walk around the room
+Go get some water
 Do some stretching
 --
 
@@ -12,6 +13,14 @@ after 30m every 1h (
     ping oneof EasyExercises, 
     after 20m ping oneof MediumExercises,
     after 40m ping oneof EasyExercises
+)
+
+after 1h every 1h (
+    ping "another hour"
+)
+
+after 2h every 2h (
+    ping "20 minute break"
 )
 
 after 40m every 1h (

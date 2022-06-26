@@ -1,5 +1,5 @@
-import Text.Parsec
-import Text.Parsec.String
+import Text.Parsec as P
+import Text.Parsec.String as PS
 import Text.Parsec.Char
 import System.Environment
 import System.IO
@@ -14,6 +14,7 @@ import Data.Map as M
 import Data.List
 import System.Process
 import Control.Monad.Random
+import Options.Applicative as O
 
 data Interval = Hours Integer 
               | Seconds Integer 
@@ -39,23 +40,23 @@ data Action = Every Interval Action
 
 -- generic parsing
 
-pPosInt:: Parser Integer
-pPosInt = read <$> many1 digit 
+pPosInt:: PS.Parser Integer
+pPosInt = read <$> P.many1 digit 
 
-manspaces :: Parser ()
+manspaces :: PS.Parser ()
 manspaces = do 
-    many1 space
+    P.many1 space
     return ()
 
-inbetween :: Char -> Char -> Parser a -> Parser a
+inbetween :: Char -> Char -> PS.Parser a -> PS.Parser a
 inbetween a b = between ( char a ) ( char b )
 
-pList :: Char -> Char -> Char -> Parser a -> Parser [ a ]
+pList :: Char -> Char -> Char -> PS.Parser a -> PS.Parser [ a ]
 pList start end del element = 
         inbetween start end  
                 ( (:) 
                   <$> ( spaces *> element <* spaces ) 
-                  <*> many ( char del *> spaces *> element <* spaces ) ) 
+                  <*> P.many ( char del *> spaces *> element <* spaces ) ) 
 
 -- ocicka parsing
 
@@ -67,70 +68,70 @@ constructorOfSuffix 'D' = Days
 constructorOfSuffix 'W' = Weeks
 constructorOfSuffix 'M' = Months
 
-pInterval :: Parser Interval
+pInterval :: PS.Parser Interval
 pInterval = do 
     number <- pPosInt
     c <- oneOf "smhDWM"
     return $ constructorOfSuffix c number
 
 
-pMessageLiteral :: Parser String
-pMessageLiteral = inbetween '"' '"' $ many ( noneOf "\"" ) 
+pMessageLiteral :: PS.Parser String
+pMessageLiteral = inbetween '"' '"' $ P.many ( noneOf "\"" ) 
 
-pTextMessage :: Parser Message
+pTextMessage :: PS.Parser Message
 pTextMessage = Message <$> pMessageLiteral
 
-pMessageListLiteral :: Parser MessageList
+pMessageListLiteral :: PS.Parser MessageList
 pMessageListLiteral = List <$> pList '[' ']' ',' pMessageLiteral
 
-pMessageListVariable :: Parser MessageList
-pMessageListVariable = Var <$> ( (:) <$> letter <*> many1 alphaNum )
+pMessageListVariable :: PS.Parser MessageList
+pMessageListVariable = Var <$> ( (:) <$> letter <*> P.many1 alphaNum )
 
-pMessageList :: Parser MessageList
-pMessageList = pMessageListLiteral <|> pMessageListVariable 
+pMessageList :: PS.Parser MessageList
+pMessageList = pMessageListLiteral P.<|> pMessageListVariable 
 
-pOneOf :: Parser Message
+pOneOf :: PS.Parser Message
 pOneOf = do  
     string "oneof" 
     manspaces
     OneOf <$> pMessageList
 
-pMessage :: Parser Message
-pMessage = pOneOf <|> pTextMessage
+pMessage :: PS.Parser Message
+pMessage = pOneOf P.<|> pTextMessage
 
-pAtom :: Parser Action
+pAtom :: PS.Parser Action
 pAtom = do 
-    actionType <- ( string "ping" >> return Ping ) <|> ( string "run" >> return Run )
+    actionType <- ( string "ping" >> return Ping ) P.<|> ( string "run" >> return Run )
     manspaces
     Atom actionType <$> pMessage
 
-pEvery :: Parser Action
+pEvery :: PS.Parser Action
 pEvery = do 
     string "every" <* manspaces
     Every <$> pInterval <* manspaces <*> pAction
 
-pAfter :: Parser Action
+pAfter :: PS.Parser Action
 pAfter = do 
     string "after" <* manspaces
     After <$> pInterval <* manspaces <*> pAction
 
-pAction :: Parser Action
-pAction = pEvery <|> pAfter <|> pAtom <|> pSequence 
+pAction :: PS.Parser Action
+pAction = pEvery P.<|> pAfter P.<|> pAtom P.<|> pSequence 
 
-pSequence :: Parser Action
+pSequence :: PS.Parser Action
 pSequence = Sequence <$> pList '(' ')' ',' pAction
 
-pMessageBlock :: Parser Action
+pMessageBlock :: PS.Parser Action
 pMessageBlock = do 
     string "--"
     manspaces
-    name <- many1 letter    
+    name <- P.many1 letter    
     char '\n' 
-    lines <- many ( (:) <$> noneOf "-" <*> many ( noneOf "\n" ) <* char '\n' )
+    lines <- P.many ( (:) <$> noneOf "-" <*> P.many ( noneOf "\n" ) <* char '\n' )
     string "--"
     return $ Define name lines
 
-pFile = spaces *> many ( ( pAction <|> pMessageBlock ) <* spaces ) <* eof 
+pFile = spaces *> P.many ( ( pAction P.<|> pMessageBlock ) <* spaces ) <* eof 
 
 -- collecting jobs
 
@@ -215,8 +216,9 @@ getUTCMicros :: IO Integer
 getUTCMicros = flip div 1000000 . diffTimeToPicoseconds . utctDayTime <$> getCurrentTime
 
 optionalDelay :: Int -> IO ()
-optionalDelay 0 = return ()
-optionalDelay n = threadDelay n
+optionalDelay n  
+    | n <= 0 = return ()
+    | otherwise = threadDelay n
 
 schedule :: Scheduler ()
 schedule = do 
@@ -236,11 +238,35 @@ schedule = do
                         else H.deleteMin ) 
                schedule
 
+aOffset :: O.Parser Integer
+aOffset = O.option auto 
+    ( long "startoffset" 
+   <> metavar "START_OFFSET" 
+   <> value 0
+   <> help "starting offset in seconds" )
+
+aFiles :: O.Parser [ String ]
+aFiles = O.some ( argument str ( metavar "FILES..." ) )
+
+data Options = Options {
+    offset :: Integer, 
+    files :: [ String ]
+}
+
+aOpts :: O.Parser Options
+aOpts = Options <$> aOffset <*> aFiles
+
+options :: O.ParserInfo Options
+options = info ( aOpts <**> helper )
+    ( fullDesc 
+   <> progDesc "Run ocicka notification scheduler"
+   <> header "what" )
+
 main :: IO ()
 main = do
-    args <- getArgs
-    actions <- R.mapM ( parseFromFile pFile ) args
+    args <- O.execParser options
+    actions <- R.mapM ( parseFromFile pFile ) ( files args )
     jobs <- concat <$> R.mapM processAction actions
     currentTime <- getUTCMicros
-    runStateT schedule ( currentTime, H.fromList jobs )
+    runStateT schedule ( currentTime - offset args * 1000000, H.fromList jobs )
     return ()

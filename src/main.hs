@@ -10,6 +10,7 @@ import Control.Concurrent
 import Data.Time.Clock
 import Data.Heap as H
 import Data.Bifunctor
+import Data.Functor
 import Data.Map as M
 import Data.List
 import System.Process
@@ -187,9 +188,14 @@ getMessage msg map =
         OneOf ( List l ) -> randomElement l 
         OneOf ( Var v ) -> randomElement ( fromJust $ M.lookup v map ) 
 
+newtype PlainString = PlainString String
+
+instance Show PlainString where  
+    show ( PlainString a ) = a
+
 getAction :: ActionType -> String -> IO ()
-getAction Ping = notifySend ( Just 10 )
-getAction Run = void . runCommand 
+getAction Ping s = notifySend ( Just 10 ) ( PlainString s )
+getAction Run s = void . runCommand $ s
 
 collect :: Action -> JobCollector ()
 collect ( Atom actionType message ) = do 

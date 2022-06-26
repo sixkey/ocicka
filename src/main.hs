@@ -226,16 +226,18 @@ schedule = do
     if H.null jobs 
        then return () 
        else do
+        lift $ print jobs
         let minJob@( JobBox delay job@( Job _ repeat work ) ) = H.minimum jobs in
             do -- lift ( print minJob )
                currentTime <- lift getUTCMicros
                lift . optionalDelay . fromIntegral $ 
                    delay - ( currentTime - startTime )
                currenterTime <- lift getUTCMicros
+    --           lift $ print ( ( currenterTime - startTime ) `div` 1000000 )
                lift work
                S.modify $ second  
                    ( if repeat > 0 
-                        then H.insert ( JobBox ( currenterTime - startTime + repeat ) job ) . H.deleteMin
+                        then H.insert ( JobBox ( delay + repeat ) job ) . H.deleteMin
                         else H.deleteMin ) 
                schedule
 

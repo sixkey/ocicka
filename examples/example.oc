@@ -8,7 +8,8 @@ I am message number 4
 after 5s every 4s (
     ping "start",
     after 1s ping oneof SomeRandomMessages, 
-    after 2s ping "end"
+    after 2s ping "end",
+    after 3s run "echo lap"
 )
 
 every 1s ping "tick"

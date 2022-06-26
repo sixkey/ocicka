@@ -28,9 +28,11 @@ data MessageList = List [ String ]
 data Message = Message String
              | OneOf MessageList deriving Show
 
+data ActionType = Run | Ping deriving Show
+
 data Action = Every Interval Action  
             | After Interval Action 
-            | Ping Message
+            | Atom ActionType Message
             | Sequence [ Action ] 
             | Define String [ String ] 
             deriving Show 
@@ -98,11 +100,11 @@ pOneOf = do
 pMessage :: Parser Message
 pMessage = pOneOf <|> pTextMessage
 
-pPing :: Parser Action
-pPing = do 
-    string "ping"
+pAtom :: Parser Action
+pAtom = do 
+    actionType <- ( string "ping" >> return Ping ) <|> ( string "run" >> return Run )
     manspaces
-    Ping <$> pMessage
+    Atom actionType <$> pMessage
 
 pEvery :: Parser Action
 pEvery = do 
@@ -115,7 +117,7 @@ pAfter = do
     After <$> pInterval <* manspaces <*> pAction
 
 pAction :: Parser Action
-pAction = pEvery <|> pAfter <|> pPing <|> pSequence 
+pAction = pEvery <|> pAfter <|> pAtom <|> pSequence 
 
 pSequence :: Parser Action
 pSequence = Sequence <$> pList '(' ')' ',' pAction
@@ -179,18 +181,21 @@ randomElement xs = do
         i <- getRandomR ( 0, n - 1 )
         return ( xs !! i )
 
-ping :: Message -> Map String [ String ] -> IO ()
-ping msg map = 
-    ( case msg of 
+getMessage :: Message -> Map String [ String ] -> IO String
+getMessage msg map = 
+    case msg of 
         Message msg -> return msg 
         OneOf ( List l ) -> randomElement l 
-        OneOf ( Var v ) -> randomElement ( fromJust $ M.lookup v map ) ) 
-        >>= notifySend ( Just 10 )
+        OneOf ( Var v ) -> randomElement ( fromJust $ M.lookup v map ) 
+
+getAction :: ActionType -> String -> IO ()
+getAction Ping = notifySend ( Just 10 )
+getAction Run = void . runCommand 
 
 collect :: Action -> JobCollector ()
-collect ( Ping message ) = do 
+collect ( Atom actionType message ) = do 
     map <- snd <$> R.get 
-    addJob ( ping message map )
+    addJob ( getMessage message map >>= getAction actionType )
 collect ( Every interval action ) = 
     local ( second . const $ microsecondsOfInterval interval ) 
           ( collect action )
